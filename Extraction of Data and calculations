@@ -1,0 +1,191 @@
+library(readr)
+# vectors for storing data from emails
+from <- c()
+to <- c()
+cc <- c()
+messageid <- c()
+date <- c()
+subject <- c()
+paths <- c()
+people <- c("arnold-j","baughman-d", "beck-s", "blair-l","campbell-l",
+            "dasovich-j","germany-c", "griffith-j", "haedicke-m","hayslett-r",
+            "hyvl-d","kaminski-v","kean-s","kitchen-l","mann-k",
+            "mccarty-d","mcconnell-m","ruscitti-k","shackleton-s","shapiro-r")
+index <- 1
+for (c in 1: length(people)) {
+# defining directory path
+  Directory <- paste("./maildir" ,people[c],sep="/")
+  Folders <- list.files(Directory,recursive=T)
+  for (i in 1: length(Folders)) {
+# reading  one email at a time with line numbers
+    path <- paste(Directory,Folders[i],sep="/")
+    email <- read_lines(path)
+    paths[index] <- path
+# flags to make sure that for every from field it’s corresponding to field gets stored even if it is empty
+    fromflag <- FALSE
+    toFlag <- FALSE
+# read relevant lines and store them in corresponding vectors
+    for (j in 1: 15) {
+      if(!grepl("X-From:", email[j],ignore.case = TRUE) && !grepl("X-To:", email[j],ignore.case = TRUE) 
+         &&  !grepl("X-cc:", email[j],ignore.case = TRUE)) {
+        if (grepl("From:", email[j],ignore.case = TRUE )) {
+          tempStr <- strsplit(email[j], split='From:', fixed=TRUE)
+          from[index] <- tempStr[[1]][2]
+          fromflag <- TRUE
+        } else if (grepl("Cc:", email[j],ignore.case = TRUE )) {
+          tempStr <- strsplit(email[j], split='Cc:', fixed=TRUE)
+          cc[index] <- tempStr[[1]][2]
+          for (z in j+1: length(email)) {
+            if(!grepl("Mime-Version:", email[z],ignore.case = TRUE )) {
+              cc[index] <- paste(cc[index],email[z])
+            } else{
+              break
+            }
+          }
+        } else if (grepl("To:", email[j],ignore.case = TRUE )) {
+          tempStr <- strsplit(email[j], split='To:', fixed=TRUE)
+          to[index] <- tempStr[[1]][2]
+# to get all fields of “to” in case of multiple lines
+          for (z in j+1: length(email)) {
+            if(!grepl("Subject:", email[z],ignore.case = TRUE) && !grepl("Cc:", email[z],ignore.case = TRUE)) {
+              to[index] <- paste(to[index],email[z])
+            } else{
+              break
+            }
+          }
+          toFlag <- TRUE
+        } else if (grepl("Date:", email[j],ignore.case = TRUE )) {
+          tempStr <- strsplit(email[j], split='Date:', fixed=TRUE)
+          date[index] <- tempStr[[1]][2]
+        } else if (grepl("Message-ID:", email[j],ignore.case = TRUE )) {
+          tempStr <- strsplit(email[j], split='Message-ID:', fixed=TRUE)
+          messageid[index] <- tempStr[[1]][2]
+        } else if (grepl("Subject:", email[j],ignore.case = TRUE )) {
+          tempStr <- strsplit(email[j], split='Subject:', fixed=TRUE)
+          subject[index] <- tempStr[[1]][2]
+        }
+      }
+      
+    }
+# to check if there is a “from” for every “to”
+    if (fromflag && !toFlag) {
+      to[index] <- "NA"
+    } else if (toFlag && !fromflag) {
+      from[index] <- "NA"
+    }
+    index <- index +1
+    if (i >20) {
+      break;
+    }
+  }
+}
+library(stringr)
+# Getting all the connections information between “from” and “to”
+#indexes to store connections
+xIndex <- c()
+yIndex <- c()
+# list of emails of all people considered in the matrix
+listOfEmails <- c()
+x <- 1
+y <- 1
+for (j in 1: length(from)) {
+  fromEmail <- str_trim(from[j])
+  toEmail <- str_trim(to[j])
+  tempToEmails <- strsplit(toEmail,split = ",", fixed = TRUE)
+# disregarding emails which are not “enron” or are “NA”
+ if(!(fromEmail %in% listOfEmails) && grepl("enron.com", fromEmail,ignore.case = TRUE )
+    && grepl("enron.com", toEmail,ignore.case = TRUE ) && !grepl("NA", toEmail,ignore.case = TRUE )
+    && !grepl("NA", fromEmail,ignore.case = TRUE )) {
+  listOfEmails[x] <- fromEmail
+  x <- x+1
+ }
+# multiple receivers check
+  if(length(tempToEmails[[1]]) > 1) {
+    for ( k in 1: length(tempToEmails[[1]])) {
+      if(!(str_trim(tempToEmails[[1]][k]) %in% listOfEmails) && grepl("enron.com", str_trim(tempToEmails[[1]][k]),ignore.case = TRUE )
+         && !grepl("NA", str_trim(tempToEmails[[1]][k]),ignore.case = TRUE ) && !grepl("NA", fromEmail,ignore.case = TRUE )) {
+        listOfEmails[x] <- str_trim(tempToEmails[[1]][k])
+        x <- x+1
+      }
+    }
+  } else if (length(tempToEmails[[1]]) == 1){
+    if(!(toEmail %in% listOfEmails) && grepl("enron.com", toEmail,ignore.case = TRUE )
+       && !grepl("NA", toEmail,ignore.case = TRUE ) && !grepl("NA", fromEmail,ignore.case = TRUE )) {
+      listOfEmails[x] <- toEmail
+      x <- x+1
+    }
+  }
+ # storing connections in indexes
+  if(length(tempToEmails[[1]]) > 1) {
+      for ( k in 1: length(tempToEmails[[1]])) {
+        if (!is.na(match(fromEmail,listOfEmails)) && 
+            !is.na(match(str_trim(tempToEmails[[1]][k]),listOfEmails))) {
+          xIndex[y] <- match(fromEmail,listOfEmails)
+          yIndex[y] <- match(str_trim(tempToEmails[[1]][k]),listOfEmails)
+          y <- y +1
+        }
+      }
+   
+    } else {
+      if (!is.na(match(fromEmail,listOfEmails)) && 
+          !is.na(match(toEmail,listOfEmails))) {
+        xIndex[y] <- match(fromEmail,listOfEmails)
+        yIndex[y] <- match(toEmail,listOfEmails)
+        y <- y +1
+      }
+      
+    }
+  
+}
+# forming matrix of all emails listed in listOfEmails
+length <- length(listOfEmails)
+connectionGraph <- matrix(0, nrow = length, ncol = length)
+for(k in 1: length(xIndex)) {
+  connectionGraph[xIndex[k],yIndex[k]] = 1
+}
+# Deleting Rows and Columns where RowSum and Colsum are less than two
+indexesDeleted <- c()
+z <- 1
+for (m in 1: length(listOfEmails)) {
+  rSum <- rowSums(connectionGraph)
+  cSum <- colSums(connectionGraph)
+ if(rSum[m] <= 1) {
+   if (cSum[m] <=1) {
+     indexesDeleted[z] <-m
+     z<- z+1
+   }
+ }
+  
+}
+connectionGraph <- connectionGraph[-indexesDeleted,-indexesDeleted]
+listOfEmails <- listOfEmails[-indexesDeleted]
+
+library("sna")
+library("igraph")
+# Matrix for Path length 2
+result = connectionGraph %*% connectionGraph
+
+# prestige
+prestigeCalculation<-prestige(connectionGraph,cmode ="domain")
+
+# centrality
+g <- graph.adjacency(connectionGraph,weighted=NULL, mode="directed")
+palette <- c("purple","brown","green","yellow","orange","red")
+par(mfrow=c(1,2))
+# degree centrality
+c.d   <- degree(g)
+message(c.d)
+col <- as.integer(5*(c.d-min(c.d))/diff(range(c.d))+1)
+set.seed(1)
+plot(g,vertex.color=palette[col],main="Degree Centrality for the EmailSubset",
+     layout=layout.fruchterman.reingold)
+
+#betweenness, Indegree and Outdegree
+EE<-graph.adjacency(connectionGraph)
+plot(EE, edge.arrow.size=.5)
+indegreeG <- degree(EE, mode="in") 
+outdegreeG <- degree(EE, mode="out") 
+betweennessG <- betweenness(EE)
+
+g <- random.graph.game(10, 3/10)
+betweenness(g)
